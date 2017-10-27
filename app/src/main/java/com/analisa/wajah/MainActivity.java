@@ -10,6 +10,7 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Environment;
+import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -21,6 +22,7 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import java.io.File;
+import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.List;
@@ -135,8 +137,8 @@ public class MainActivity extends AppCompatActivity {
 
                 String imagePath = file.getAbsolutePath();
 
-                MyTask myTask = new MyTask(imagePath);
-                myTask.execute(null, null, null);
+                MyTask myTask = new MyTask();
+                myTask.execute(imagePath, null, null);
             } catch (FileNotFoundException e) {
                 // TODO Auto-generated catch block
                 e.printStackTrace();
@@ -145,35 +147,39 @@ public class MainActivity extends AppCompatActivity {
                 e.printStackTrace();
             }
         } else if (requestCode == PICK_IMAGE && resultCode == RESULT_OK && intent != null) {
-            final Bundle extras = intent.getExtras();
-            if (extras != null) {
+            Uri uri = intent.getData();
+            try {
                 String realPath;
                 // SDK < API11
                 if (Build.VERSION.SDK_INT < 11)
                     realPath = RealPathUtil.getRealPathFromURI_BelowAPI11(this, intent.getData());
 
-                // SDK >= 11 && SDK < 19
+                    // SDK >= 11 && SDK < 19
                 else if (Build.VERSION.SDK_INT < 19)
                     realPath = RealPathUtil.getRealPathFromURI_API11to18( this, intent.getData());
 
-                // SDK > 19 (Android 4.4)
+                    // SDK > 19 (Android 4.4)
                 else
                     realPath = RealPathUtil.getRealPathFromURI_API19(this, intent.getData());
 
-                Uri uriFromPath = Uri.fromFile(new File(realPath));
-                Bitmap bitmap = null;
-                try {
-                    bitmap = BitmapFactory.decodeStream(getContentResolver().openInputStream(uriFromPath));
-                } catch (FileNotFoundException e) {
-                    e.printStackTrace();
-                }
-
+                Bitmap bitmap = getBitmapFromUri(uri);
                 ivThumbnailPhoto.setImageBitmap(bitmap);
 
-                MyTask myTask = new MyTask(realPath);
-                myTask.execute(null, null, null);
+                MyTask myTask = new MyTask();
+                myTask.execute(realPath, null, null);
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         }
+    }
+
+    private Bitmap getBitmapFromUri(Uri uri) throws IOException {
+        ParcelFileDescriptor parcelFileDescriptor =
+                getContentResolver().openFileDescriptor(uri, "r");
+        FileDescriptor fileDescriptor = parcelFileDescriptor.getFileDescriptor();
+        Bitmap image = BitmapFactory.decodeFileDescriptor(fileDescriptor);
+        parcelFileDescriptor.close();
+        return image;
     }
 
     private void setTextHasil(final TextView text, final String value){
@@ -201,12 +207,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private class MyTask extends AsyncTask<String, Void, Void> {
-        String imagePath;
-
-        public MyTask(String imagePath) {
-            this.imagePath = imagePath;
-        }
-
         @Override
         protected void onPreExecute() {
             setLoading(true);
@@ -220,7 +220,7 @@ public class MainActivity extends AppCompatActivity {
 
             List<ClarifaiOutput<Region>> predictionResults =
                     client.getDefaultModels().demographicsModel().predict()
-                            .withInputs(ClarifaiInput.forImage(new File(imagePath)))
+                            .withInputs(ClarifaiInput.forImage(new File(arg0[0].toString())))
                             .executeSync().get();
 
             if (predictionResults.size() > 0) {
